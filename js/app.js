@@ -136,100 +136,52 @@ function updateReadiness() {
  * Fetch peserta list from GAS backend (tab "Nama") at page load.
  * Populates the NIM datalist for autocomplete.
  */
-function loadPeserta() {
-  return new Promise((resolve) => {
-    setNimHint('⏳ Memuat data peserta...', 'loading');
+async function loadPeserta() {
+  try {
+    const url = GAS_ENDPOINT + '?action=getPeserta';
+    const response = await fetch(url, {
+      method: 'GET',
+      mode:   'cors',
+    });
 
-    const callbackName = '__getPesertaCB_' + Date.now();
-    const script = document.createElement('script');
-    let timer = null;
-    let callbackCalled = false;
-
-    // Cleanup function: remove global callback & script tag
-    function cleanup() {
-      if (timer) clearTimeout(timer);
-      delete window[callbackName];
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    // Timeout handling (15 seconds)
-    timer = setTimeout(() => {
-      if (!callbackCalled) {
-        cleanup();
-        console.warn('[JSONP STATE B/TIMEOUT] Callback was not invoked within 15s.');
-        setNimHint('⚠️ [STATE B] Waktu pembacaan data peserta habis. Pastikan Web App GAS di-deploy dengan versi terbaru (New Version).', 'error');
-        resolve();
+    const text = await response.text();
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      if (text.includes('signin') || text.includes('accounts.google.com') || text.startsWith('<!doctype')) {
+        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Harap pastikan Web App di-deploy dengan akses "Anyone".');
       }
-    }, 15000);
+      throw new Error('Respons server bukan JSON valid.');
+    }
 
-    // Global callback handler
-    window[callbackName] = function (response) {
-      callbackCalled = true;
-      console.log('[JSONP] CALLBACK DITERIMA');
-      console.log('[JSONP] RESPONSE:', response);
-      cleanup();
+    if (result.status === 'success' && Array.isArray(result.data)) {
+      AppState.pesertaList   = result.data;
+      AppState.pesertaLoaded = true;
 
-      if (response && response.status === 'success' && Array.isArray(response.data)) {
-        // Enforce string mapping to avoid number conversion / zero-stripping bugs
-        AppState.pesertaList = response.data.map((p) => ({
-          nim:      String(p.nim || '').trim(),
-          nama:     String(p.nama || '').trim(),
-          fakultas: String(p.fakultas || '').trim(),
-          prodi:    String(p.prodi || '').trim(),
-        }));
-        AppState.pesertaLoaded = true;
+      // Populate datalist with NIM options
+      El.nimList.innerHTML = '';
+      result.data.forEach((p) => {
+        const option = document.createElement('option');
+        option.value = p.nim;
+        option.label = p.nama;
+        El.nimList.appendChild(option);
+      });
 
-        // Populate datalist with NIM options
-        El.nimList.innerHTML = '';
-        AppState.pesertaList.forEach((p) => {
-          if (p.nim) {
-            const option = document.createElement('option');
-            option.value = p.nim;
-            option.label = p.nama;
-            El.nimList.appendChild(option);
-          }
-        });
-
-        clearNimHint();
-        console.info(`[JSONP STATE C] Successfully loaded ${AppState.pesertaList.length} peserta from tab "Nama".`);
-      } else {
-        const msg = (response && response.message) ? response.message : 'Respons server tidak valid.';
-        console.warn('[JSONP] getPeserta returned non-success:', msg);
-        setNimHint(`⚠️ [STATE B] ${msg}`, 'error');
-      }
-      resolve();
-    };
-
-    // Script load success handler
-    script.onload = function () {
-      console.log('[JSONP] script berhasil dimuat');
-      // If script loaded but callback was not triggered, Web App is returning raw JSON instead of JS callback
-      setTimeout(() => {
-        if (!callbackCalled && !AppState.pesertaLoaded) {
-          console.warn('[JSONP STATE B] Script tag loaded but response was raw JSON instead of callback JS.');
-          setNimHint('⚠️ [STATE B] Script dimuat tetapi Apps Script mengembalikan JSON biasa. Anda HARUS melakukan New Deployment di Google Apps Script.', 'error');
-        }
-      }, 1200);
-    };
-
-    // Script load error handler (State A)
-    script.onerror = function (error) {
-      cleanup();
-      console.error('[JSONP STATE A] script ERROR:', error);
-      setNimHint('⚠️ [STATE A] Script error saat terhubung ke server data peserta. Periksa URL Apps Script.', 'error');
-      resolve();
-    };
-
-    // Build URL with callback parameter and inject script tag
-    const targetUrl = GAS_ENDPOINT + '?action=getPeserta&callback=' + encodeURIComponent(callbackName);
-    console.log('[JSONP] URL:', targetUrl);
-    console.log('[JSONP] callback:', callbackName);
-
-    script.src = targetUrl;
-    document.head.appendChild(script);
-  });
+      clearNimHint();
+      console.info(`[App] Loaded ${result.data.length} peserta from tab "Nama".`);
+    } else {
+      console.warn('[App] getPeserta returned non-success:', result.message || result);
+      setNimHint(`⚠️ ${result.message || 'Gagal memuat data peserta.'}`, 'error');
+    }
+  } catch (err) {
+    console.error('[App] Failed to load peserta:', err);
+    setNimHint(`⚠️ ${err.message || 'Tidak dapat memuat data peserta. Periksa koneksi internet.'}`, 'error');
+  }
 }
 
 /**
