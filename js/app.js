@@ -136,52 +136,79 @@ function updateReadiness() {
  * Fetch peserta list from GAS backend (tab "Nama") at page load.
  * Populates the NIM datalist for autocomplete.
  */
-async function loadPeserta() {
-  try {
-    const url = GAS_ENDPOINT + '?action=getPeserta';
-    const response = await fetch(url, {
-      method: 'GET',
-      mode:   'cors',
-    });
+function loadPeserta() {
+  return new Promise((resolve) => {
+    setNimHint('⏳ Memuat data peserta...', 'loading');
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    const callbackName = '__getPesertaCB_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const script = document.createElement('script');
+    let timer = null;
 
-    const text = await response.text();
-    let result;
-    try {
-      result = JSON.parse(text);
-    } catch {
-      if (text.includes('signin') || text.includes('accounts.google.com') || text.startsWith('<!doctype')) {
-        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Harap pastikan Web App di-deploy dengan akses "Anyone".');
+    // Cleanup function: remove global callback & script tag
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      delete window[callbackName];
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
       }
-      throw new Error('Respons server bukan JSON valid.');
     }
 
-    if (result.status === 'success' && Array.isArray(result.data)) {
-      AppState.pesertaList   = result.data;
-      AppState.pesertaLoaded = true;
+    // Timeout handling (15 seconds)
+    timer = setTimeout(() => {
+      cleanup();
+      console.warn('[App] JSONP getPeserta timed out.');
+      setNimHint('⚠️ Waktu pembacaan data peserta habis. Periksa koneksi internet Anda.', 'error');
+      resolve();
+    }, 15000);
 
-      // Populate datalist with NIM options
-      El.nimList.innerHTML = '';
-      result.data.forEach((p) => {
-        const option = document.createElement('option');
-        option.value = p.nim;
-        option.label = p.nama;
-        El.nimList.appendChild(option);
-      });
+    // Global callback handler
+    window[callbackName] = function (result) {
+      cleanup();
 
-      clearNimHint();
-      console.info(`[App] Loaded ${result.data.length} peserta from tab "Nama".`);
-    } else {
-      console.warn('[App] getPeserta returned non-success:', result.message || result);
-      setNimHint(`⚠️ ${result.message || 'Gagal memuat data peserta.'}`, 'error');
-    }
-  } catch (err) {
-    console.error('[App] Failed to load peserta:', err);
-    setNimHint(`⚠️ ${err.message || 'Tidak dapat memuat data peserta. Periksa koneksi internet.'}`, 'error');
-  }
+      if (result && result.status === 'success' && Array.isArray(result.data)) {
+        // Enforce string mapping to avoid number conversion / zero-stripping bugs
+        AppState.pesertaList = result.data.map((p) => ({
+          nim:      String(p.nim || '').trim(),
+          nama:     String(p.nama || '').trim(),
+          fakultas: String(p.fakultas || '').trim(),
+          prodi:    String(p.prodi || '').trim(),
+        }));
+        AppState.pesertaLoaded = true;
+
+        // Populate datalist with NIM options
+        El.nimList.innerHTML = '';
+        AppState.pesertaList.forEach((p) => {
+          if (p.nim) {
+            const option = document.createElement('option');
+            option.value = p.nim;
+            option.label = p.nama;
+            El.nimList.appendChild(option);
+          }
+        });
+
+        clearNimHint();
+        console.info(`[App] Successfully loaded ${AppState.pesertaList.length} peserta via JSONP from tab "Nama".`);
+      } else {
+        const msg = (result && result.message) ? result.message : 'Gagal memuat data peserta.';
+        console.warn('[App] getPeserta returned non-success:', msg);
+        setNimHint(`⚠️ ${msg}`, 'error');
+      }
+      resolve();
+    };
+
+    // Script load error handler
+    script.onerror = function () {
+      cleanup();
+      console.error('[App] Script element load error on JSONP request.');
+      setNimHint('⚠️ Tidak dapat terhubung ke server data peserta. Periksa koneksi internet.', 'error');
+      resolve();
+    };
+
+    // Build URL with callback parameter and inject script tag
+    const url = `${GAS_ENDPOINT}?action=getPeserta&callback=${callbackName}`;
+    script.src = url;
+    document.head.appendChild(script);
+  });
 }
 
 /**
