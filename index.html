@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="Website Absensi Kegiatan Lapangan — Catat kehadiran Anda di mana pun dengan GPS otomatis dan bukti foto kegiatan." />
-  <meta name="theme-color" content="#0b1120" />
-  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="description" content="Website Absensi Kegiatan Lapangan untuk Mahasiswa / Peserta Magang BPJS Kesehatan. Peta GPS dinamis, foto kamera langsung, dan pencatatan otomatis." />
+  <meta name="theme-color" content="#080e1a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Absensi Kegiatan Lapangan</title>
@@ -26,7 +25,12 @@
   ==================================================== -->
   <header class="app-header" role="banner">
     <div class="header-inner">
-      <div class="header-icon" aria-hidden="true">📋</div>
+      <div class="header-icon-box" aria-hidden="true">
+        <svg class="icon-header" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+        </svg>
+      </div>
       <div>
         <h1 class="header-title">Absensi Lapangan</h1>
         <p class="header-sub">Kegiatan BPJS Kesehatan</p>
@@ -79,7 +83,7 @@
           type="text"
           id="inputNama"
           class="form-input input-readonly"
-          placeholder="Nama akan terisi otomatis setelah NIM valid"
+          placeholder="Nama terisi otomatis setelah NIM valid"
           readonly
           tabindex="-1"
         />
@@ -98,7 +102,10 @@
       </p>
 
       <button type="button" id="btnGetLocation" class="btn btn-secondary" aria-live="polite">
-        <span class="btn-icon" aria-hidden="true">📍</span>
+        <svg class="btn-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
         <span id="btnGetLocationText">Ambil Lokasi Saya</span>
       </button>
 
@@ -112,7 +119,12 @@
 
       <!-- Tampilan Alamat Reverse Geocoding -->
       <div id="addressCard" class="address-card hidden" aria-live="polite">
-        <div class="address-icon" aria-hidden="true">📍</div>
+        <div class="address-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+        </div>
         <div class="address-content">
           <p class="address-label">Lokasi Terdeteksi</p>
           <p id="addressText" class="address-text">Mendeteksi alamat...</p>
@@ -135,13 +147,6 @@
         Foto akan dikirim dan disimpan di Google Drive.
       </p>
 
-      <!--
-        Hidden file input — camera only.
-        capture="environment" instructs mobile browsers to open the rear camera directly.
-        accept="image/*" limits to image files only.
-        NOTE: On desktop browsers, capture attribute is ignored and a file picker may appear.
-        This is a browser limitation, not a system limitation. See README.md.
-      -->
       <input
         type="file"
         id="photoInput"
@@ -152,7 +157,10 @@
       />
 
       <button type="button" id="btnTakePhoto" class="btn btn-secondary">
-        <span class="btn-icon" aria-hidden="true">📷</span>
+        <svg class="btn-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
         <span id="btnTakePhotoText">Ambil Foto</span>
       </button>
 
@@ -168,7 +176,7 @@
           alt="Preview foto kegiatan yang diambil"
         />
         <button type="button" id="btnChangePhoto" class="btn-text-sm">
-          📷 Ambil Ulang Foto
+          Ambil Ulang Foto
         </button>
       </div>
     </section>
@@ -176,7 +184,10 @@
     <!-- ─── STEP 4: SUBMIT ─── -->
     <section class="card card-submit" id="section-submit" aria-labelledby="title-submit">
       <button type="button" id="btnSubmit" class="btn btn-primary" disabled aria-label="Kirim data absensi">
-        <span id="btnSubmitIcon" class="btn-icon" aria-hidden="true">🚀</span>
+        <svg class="btn-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
         <span id="btnSubmitText">Kirim Absensi</span>
       </button>
       <p class="submit-note" id="submitHint">
@@ -218,7 +229,7 @@
     aria-describedby="modalMessage"
   >
     <div class="modal-card">
-      <div id="modalIcon" class="modal-icon" aria-hidden="true">✅</div>
+      <div id="modalIcon" class="modal-icon" aria-hidden="true"></div>
       <h2 id="modalTitle" class="modal-title">Judul Modal</h2>
       <p id="modalMessage" class="modal-message">Pesan modal.</p>
       <div id="modalDetail" class="modal-detail hidden" aria-label="Detail absensi"></div>

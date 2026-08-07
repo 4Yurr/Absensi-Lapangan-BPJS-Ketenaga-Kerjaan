@@ -2,20 +2,14 @@
 
 /**
  * app.js — Main Application Controller
- * ======================================
- * Orchestrates all modules:
+ * =====================================
+ * Coordinates all modules:
  *   - LocationModule  (GPS & Reverse Geocoding)
  *   - MapModule       (Leaflet read-only map)
  *   - CameraModule    (Photo capture & compression)
  *   - Data Peserta    (NIM lookup from tab "Nama" via GAS backend)
  *   - Form validation & submit flow
  *   - HTTP POST to Google Apps Script backend
- *
- * ─────────────────────────────────────────────────────────────
- * ⚙️  IMPORTANT CONFIGURATION:
- *     Replace GAS_ENDPOINT below with your deployed
- *     Google Apps Script Web App URL.
- * ─────────────────────────────────────────────────────────────
  */
 
 /* ================================================================
@@ -28,10 +22,13 @@ const GAS_ENDPOINT =
    APPLICATION STATE
    ================================================================ */
 const AppState = {
-  lat:           null,    // Latitude from GPS
-  lon:           null,    // Longitude from GPS
-  address:       null,    // Address from reverse geocoding
-  photoBase64:   null,    // Compressed Base64 image string
+  /* ─── Location State ─── */
+  lat:           null,    // Latitude (number)
+  lon:           null,    // Longitude (number)
+  address:       null,    // Reverse geocoded address (string)
+
+  /* ─── Photo State ─── */
+  photoBase64:   null,    // Base64 JPEG string
   photoFileName: null,    // Original file name
   isSubmitting:  false,   // Guard against double-submit
 
@@ -43,59 +40,62 @@ const AppState = {
 };
 
 /* ================================================================
-   DOM ELEMENT REFERENCES
+   DOM ELEMENTS
    ================================================================ */
-const $ = (id) => document.getElementById(id);
-
 const El = {
-  /* Identity */
-  inputNIM:           $('inputNIM'),
-  nimList:            $('nimList'),
-  nimHelp:            $('nimHelp'),
-  inputNama:          $('inputNama'),
-  /* Location */
-  btnGetLocation:     $('btnGetLocation'),
-  btnGetLocationText: $('btnGetLocationText'),
-  locationStatus:     $('locationStatus'),
-  mapWrapper:         $('mapWrapper'),
-  addressCard:        $('addressCard'),
-  addressText:        $('addressText'),
-  latDisplay:         $('latDisplay'),
-  lonDisplay:         $('lonDisplay'),
-  /* Photo */
-  photoInput:          $('photoInput'),
-  btnTakePhoto:        $('btnTakePhoto'),
-  btnTakePhotoText:    $('btnTakePhotoText'),
-  btnChangePhoto:      $('btnChangePhoto'),
-  photoPreviewWrapper: $('photoPreviewWrapper'),
-  photoPreview:        $('photoPreview'),
-  /* Submit */
-  btnSubmit:      $('btnSubmit'),
-  btnSubmitIcon:  $('btnSubmitIcon'),
-  btnSubmitText:  $('btnSubmitText'),
-  /* Readiness checks */
-  checkNama:   $('check-nama'),
-  checkNIM:    $('check-nim'),
-  checkLokasi: $('check-lokasi'),
-  checkFoto:   $('check-foto'),
-  /* Modal */
-  modalOverlay: $('modalOverlay'),
-  modalCard:    document.querySelector('.modal-card'),
-  modalIcon:    $('modalIcon'),
-  modalTitle:   $('modalTitle'),
-  modalMessage: $('modalMessage'),
-  modalDetail:  $('modalDetail'),
-  modalBtn:     $('modalBtn'),
-  /* Loading */
-  loadingOverlay: $('loadingOverlay'),
-  loadingText:    $('loadingText'),
+  // Identity
+  inputNIM:       document.getElementById('inputNIM'),
+  inputNama:      document.getElementById('inputNama'),
+  nimList:        document.getElementById('nimList'),
+  nimHelp:        document.getElementById('nimHelp'),
+
+  // Location
+  btnGetLocation:     document.getElementById('btnGetLocation'),
+  btnGetLocationText: document.getElementById('btnGetLocationText'),
+  locationStatus:     document.getElementById('locationStatus'),
+  mapWrapper:         document.getElementById('mapWrapper'),
+  addressCard:        document.getElementById('addressCard'),
+  addressText:        document.getElementById('addressText'),
+  latDisplay:         document.getElementById('latDisplay'),
+  lonDisplay:         document.getElementById('lonDisplay'),
+
+  // Photo
+  photoInput:          document.getElementById('photoInput'),
+  btnTakePhoto:        document.getElementById('btnTakePhoto'),
+  btnTakePhotoText:    document.getElementById('btnTakePhotoText'),
+  photoPreviewWrapper: document.getElementById('photoPreviewWrapper'),
+  photoPreview:        document.getElementById('photoPreview'),
+  btnChangePhoto:      document.getElementById('btnChangePhoto'),
+
+  // Submit & Readiness
+  btnSubmit:      document.getElementById('btnSubmit'),
+  btnSubmitIcon:  document.getElementById('btnSubmitIcon'),
+  btnSubmitText:  document.getElementById('btnSubmitText'),
+  submitHint:     document.getElementById('submitHint'),
+  checkNIM:       document.getElementById('check-nim'),
+  checkNama:      document.getElementById('check-nama'),
+  checkLokasi:    document.getElementById('check-lokasi'),
+  checkFoto:      document.getElementById('check-foto'),
+
+  // Modal
+  modalOverlay:   document.getElementById('modalOverlay'),
+  modalCard:      document.querySelector('.modal-card'),
+  modalIcon:      document.getElementById('modalIcon'),
+  modalTitle:     document.getElementById('modalTitle'),
+  modalMessage:   document.getElementById('modalMessage'),
+  modalDetail:    document.getElementById('modalDetail'),
+  modalBtn:       document.getElementById('modalBtn'),
+
+  // Loading Overlay
+  loadingOverlay: document.getElementById('loadingOverlay'),
+  loadingText:    document.getElementById('loadingText'),
 };
 
 /* ================================================================
-   UTILITY HELPERS
+   HELPERS
    ================================================================ */
-const show = (el) => el.classList.remove('hidden');
-const hide = (el) => el.classList.add('hidden');
+function show(el) { if (el) el.classList.remove('hidden'); }
+function hide(el) { if (el) el.classList.add('hidden'); }
 
 /** Set the location status message with a visual type. */
 function setLocationStatus(message, type = 'info') {
@@ -154,7 +154,7 @@ async function loadPeserta() {
       result = JSON.parse(text);
     } catch {
       if (text.includes('signin') || text.includes('accounts.google.com') || text.startsWith('<!doctype')) {
-        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Harap pastikan Web App di-deploy dengan akses "Anyone".');
+        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Pastikan Web App di-deploy dengan akses "Anyone".');
       }
       throw new Error('Respons server bukan JSON valid.');
     }
@@ -176,11 +176,11 @@ async function loadPeserta() {
       console.info(`[App] Loaded ${result.data.length} peserta from tab "Nama".`);
     } else {
       console.warn('[App] getPeserta returned non-success:', result.message || result);
-      setNimHint(`⚠️ ${result.message || 'Gagal memuat data peserta.'}`, 'error');
+      setNimHint(result.message || 'Gagal memuat data peserta.', 'error');
     }
   } catch (err) {
     console.error('[App] Failed to load peserta:', err);
-    setNimHint(`⚠️ ${err.message || 'Tidak dapat memuat data peserta. Periksa koneksi internet.'}`, 'error');
+    setNimHint(err.message || 'Tidak dapat memuat data peserta. Periksa koneksi internet.', 'error');
   }
 }
 
@@ -247,7 +247,7 @@ El.inputNIM.addEventListener('change', () => {
  */
 function lookupNIM(nim) {
   if (!AppState.pesertaLoaded) {
-    setNimHint('⏳ Data peserta belum dimuat. Mohon tunggu...', 'loading');
+    setNimHint('Data peserta belum dimuat. Mohon tunggu...', 'loading');
     updateReadiness();
     return;
   }
@@ -258,7 +258,7 @@ function lookupNIM(nim) {
   );
 
   if (match) {
-    // ✅ NIM found — fill name (read-only)
+    // NIM found — fill name (read-only)
     AppState.selectedNIM  = match.nim;
     AppState.selectedNama = match.nama;
 
@@ -267,9 +267,9 @@ function lookupNIM(nim) {
     El.inputNIM.classList.add('input-filled');
     El.inputNIM.classList.remove('input-error');
 
-    setNimHint(`✅ Peserta ditemukan: ${match.nama}`, 'success');
+    setNimHint(`Peserta terverifikasi: ${match.nama}`, 'success');
   } else {
-    // ❌ NIM not found
+    // NIM not found
     AppState.selectedNIM  = null;
     AppState.selectedNama = null;
     El.inputNama.value     = '';
@@ -277,7 +277,7 @@ function lookupNIM(nim) {
     El.inputNIM.classList.add('input-error');
     El.inputNIM.classList.remove('input-filled');
 
-    setNimHint('❌ NIM tidak terdaftar dalam data peserta.', 'error');
+    setNimHint('NIM tidak terdaftar dalam data peserta.', 'error');
   }
 
   updateReadiness();
@@ -293,7 +293,7 @@ async function handleGetLocation() {
   El.btnGetLocation.disabled = true;
   El.btnGetLocation.classList.add('btn-loading');
   El.btnGetLocationText.textContent = 'Mendeteksi lokasi...';
-  setLocationStatus('⏳ Membaca koordinat GPS perangkat Anda...', 'info');
+  setLocationStatus('Membaca koordinat GPS perangkat Anda...', 'info');
 
   // Reset previous location state
   AppState.lat     = null;
@@ -319,10 +319,10 @@ async function handleGetLocation() {
     MapModule.invalidateSize();
 
     // Show address card with loading text
-    El.addressText.textContent = '🔍 Mencari nama lokasi...';
+    El.addressText.textContent = 'Mendeteksi nama lokasi...';
     show(El.addressCard);
 
-    setLocationStatus('✅ Koordinat GPS berhasil didapatkan!', 'success');
+    setLocationStatus('Koordinat GPS berhasil terdeteksi.', 'success');
     El.btnGetLocationText.textContent = 'Perbarui Lokasi';
     updateReadiness();
 
@@ -339,7 +339,7 @@ async function handleGetLocation() {
 
     hide(El.mapWrapper);
     hide(El.addressCard);
-    setLocationStatus(`❌ ${err.message}`, 'error');
+    setLocationStatus(err.message, 'error');
     El.btnGetLocationText.textContent = 'Coba Lagi';
 
   } finally {
@@ -387,7 +387,7 @@ El.photoInput.addEventListener('change', (e) => {
       El.btnTakePhoto.disabled = false;
       El.btnTakePhoto.classList.remove('btn-loading');
 
-      showModal('error', '❌ Gagal Memuat Foto', errMsg);
+      showModal('error', 'Gagal Memuat Foto', errMsg);
       updateReadiness();
     }
   );
@@ -409,25 +409,24 @@ async function handleSubmit() {
 
   /* ─── Final client-side validation ─── */
   if (!nim || !nama) {
-    showModal('error', '⚠️ Data Tidak Lengkap', 'NIM belum dipilih atau tidak valid. Pilih NIM dari daftar peserta.');
+    showModal('error', 'Data Tidak Lengkap', 'NIM belum dipilih atau tidak valid. Pilih NIM dari daftar peserta.');
     return;
   }
   if (!AppState.lat || !AppState.lon) {
-    showModal('error', '⚠️ Lokasi Belum Diambil', 'Tekan tombol "Ambil Lokasi Saya" dan tunggu hingga lokasi GPS berhasil terdeteksi.');
+    showModal('error', 'Lokasi Belum Diambil', 'Tekan tombol "Ambil Lokasi Saya" dan tunggu hingga lokasi GPS berhasil terdeteksi.');
     return;
   }
   if (!AppState.photoBase64) {
-    showModal('error', '⚠️ Foto Belum Diambil', 'Foto kegiatan wajib diambil langsung dengan kamera sebagai bukti kehadiran di lapangan.');
+    showModal('error', 'Foto Belum Diambil', 'Foto kegiatan wajib diambil langsung dengan kamera sebagai bukti kehadiran di lapangan.');
     return;
   }
 
   /* ─── Lock UI ─── */
   AppState.isSubmitting = true;
   El.btnSubmit.disabled = true;
-  El.btnSubmitIcon.textContent = '⏳';
-  El.btnSubmitText.textContent = 'Mengirim...';
+  El.btnSubmitText.textContent = 'Mengirim Data...';
   show(El.loadingOverlay);
-  El.loadingText.textContent = 'Mengupload foto ke Google Drive...';
+  El.loadingText.textContent = 'Mengunggah foto ke Google Drive...';
 
   /* ─── Build Payload ─── */
   const payload = {
@@ -441,12 +440,11 @@ async function handleSubmit() {
   };
 
   try {
-    El.loadingText.textContent = 'Mengirim data absensi...';
+    El.loadingText.textContent = 'Mencatat data absensi...';
 
     const response = await fetch(GAS_ENDPOINT, {
       method:  'POST',
       mode:    'cors',
-      // Use text/plain to avoid CORS preflight issues with Google Apps Script
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify(payload),
     });
@@ -468,21 +466,21 @@ async function handleSubmit() {
     if (result.status === 'success') {
       const d = result.data || {};
       const detail = [
-        d.nim    ? `NIM     : ${d.nim}`    : '',
-        d.nama   ? `Nama    : ${d.nama}`   : '',
+        d.nim     ? `NIM     : ${d.nim}`     : '',
+        d.nama    ? `Nama    : ${d.nama}`    : '',
         d.tanggal ? `Tanggal : ${d.tanggal}` : '',
         d.jam     ? `Jam     : ${d.jam}`     : '',
         d.lokasi  ? `Lokasi  : ${d.lokasi}`  : '',
       ].filter(Boolean).join('\n');
 
-      showModal('success', '✅ Absensi Berhasil!', 'Data kehadiran Anda telah berhasil dicatat.', detail);
+      showModal('success', 'Absensi Berhasil!', 'Data kehadiran Anda telah berhasil dicatat.', detail);
       resetAfterSuccess();
 
     } else if (result.status === 'error') {
-      showModal('error', '❌ Absensi Ditolak', result.message || 'Terjadi kesalahan pada server.');
+      showModal('error', 'Absensi Ditolak', result.message || 'Terjadi kesalahan pada server.');
 
     } else {
-      showModal('error', '⚠️ Respons Tidak Diketahui', 'Server mengembalikan status tidak diketahui. Hubungi administrator.');
+      showModal('error', 'Respons Tidak Diketahui', 'Server mengembalikan status tidak diketahui. Hubungi administrator.');
     }
 
   } catch (err) {
@@ -498,12 +496,11 @@ async function handleSubmit() {
       errMsg = err.message;
     }
 
-    showModal('error', '❌ Gagal Mengirim', errMsg);
+    showModal('error', 'Gagal Mengirim Data', errMsg);
 
   } finally {
     AppState.isSubmitting = false;
     El.btnSubmit.disabled = false;
-    El.btnSubmitIcon.textContent = '🚀';
     El.btnSubmitText.textContent = 'Kirim Absensi';
     updateReadiness();
   }
@@ -515,8 +512,23 @@ async function handleSubmit() {
 function showModal(type, title, message, detail = '') {
   const isSuccess = (type === 'success');
 
-  El.modalIcon.textContent = isSuccess ? '✅' : '❌';
-  El.modalIcon.className   = `modal-icon modal-icon-${type}`;
+  // Render clean SVG icon instead of raw emoji
+  if (isSuccess) {
+    El.modalIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>`;
+  } else {
+    El.modalIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>`;
+  }
+
+  El.modalIcon.className      = `modal-icon modal-icon-${type}`;
   El.modalTitle.textContent   = title;
   El.modalMessage.textContent = message;
 
