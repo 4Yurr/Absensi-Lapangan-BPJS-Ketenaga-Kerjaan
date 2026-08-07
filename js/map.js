@@ -6,6 +6,7 @@
  * Renders an interactive map showing the user's GPS position.
  * The marker is strictly read-only (non-draggable, non-interactive).
  * Panning and zooming are allowed for visual exploration only.
+ * Includes defensive checks against missing Leaflet global (L).
  */
 
 const MapModule = (() => {
@@ -21,6 +22,7 @@ const MapModule = (() => {
 
   /* ─── Custom Marker Icon ─────────────────────────────────── */
   function _createIcon() {
+    if (typeof L === 'undefined' || !L.divIcon) return null;
     return L.divIcon({
       className: 'custom-marker',
       html: '<div class="marker-pin"></div><div class="marker-pulse"></div>',
@@ -38,44 +40,63 @@ const MapModule = (() => {
    * @param {number} lon - Longitude from Geolocation API
    */
   function initMap(lat, lon) {
+    if (typeof L === 'undefined') {
+      console.warn('[MapModule] Leaflet library (L) is not loaded.');
+      const container = document.getElementById('map');
+      if (container) {
+        container.innerHTML =
+          '<div style="padding:24px;text-align:center;color:#8ba3c1;font-size:0.85rem;line-height:1.5;">' +
+          '📍 Peta tidak dapat dimuat, namun <strong>koordinat GPS Anda tetap tercatat</strong> secara akurat.' +
+          '</div>';
+      }
+      return;
+    }
+
     if (_map) {
       // Map already exists — just update position
       updateMarker(lat, lon);
       return;
     }
 
-    _map = L.map('map', {
-      center:          [lat, lon],
-      zoom:            DEFAULT_ZOOM,
-      zoomControl:     true,
-      dragging:        true,        // Allow panning to see surrounding area
-      scrollWheelZoom: true,
-      doubleClickZoom: false,       // Prevent accidental zoom on double tap
-      boxZoom:         false,
-      keyboard:        false,
-    });
+    try {
+      _map = L.map('map', {
+        center:          [lat, lon],
+        zoom:            DEFAULT_ZOOM,
+        zoomControl:     true,
+        dragging:        true,        // Allow panning to see surrounding area
+        scrollWheelZoom: true,
+        doubleClickZoom: false,       // Prevent accidental zoom on double tap
+        boxZoom:         false,
+        keyboard:        false,
+      });
 
-    // Tile Layer — OpenStreetMap (free, no API key)
-    L.tileLayer(TILE_URL, {
-      attribution: TILE_ATTR,
-      maxZoom:     19,
-    }).addTo(_map);
+      // Tile Layer — OpenStreetMap (free, no API key)
+      L.tileLayer(TILE_URL, {
+        attribution: TILE_ATTR,
+        maxZoom:     19,
+      }).addTo(_map);
 
-    // Place read-only marker
-    _marker = L.marker([lat, lon], {
-      icon:        _createIcon(),
-      draggable:   false,    // ← STRICTLY READ-ONLY: cannot be moved
-      interactive: false,    // ← no click events on marker itself
-      keyboard:    false,
-    }).addTo(_map);
+      // Place read-only marker
+      const icon = _createIcon();
+      const markerOptions = {
+        draggable:   false,    // ← STRICTLY READ-ONLY: cannot be moved
+        interactive: false,    // ← no click events on marker itself
+        keyboard:    false,
+      };
+      if (icon) markerOptions.icon = icon;
 
-    _marker.bindPopup(
-      '<strong>📍 Posisi Anda</strong><br><span style="font-size:0.75rem;opacity:0.8">Lokasi ini tidak dapat diubah</span>',
-      { closeButton: false, autoPan: false }
-    );
+      _marker = L.marker([lat, lon], markerOptions).addTo(_map);
 
-    // Show popup after brief delay
-    setTimeout(() => { if (_marker) _marker.openPopup(); }, 600);
+      _marker.bindPopup(
+        '<strong>📍 Posisi Anda</strong><br><span style="font-size:0.75rem;opacity:0.8">Lokasi ini tidak dapat diubah</span>',
+        { closeButton: false, autoPan: false }
+      );
+
+      // Show popup after brief delay
+      setTimeout(() => { if (_marker) _marker.openPopup(); }, 600);
+    } catch (err) {
+      console.error('[MapModule] Failed to render map:', err);
+    }
   }
 
   /**
@@ -84,11 +105,15 @@ const MapModule = (() => {
    * @param {number} lon
    */
   function updateMarker(lat, lon) {
-    if (!_map || !_marker) return;
-    const latlng = L.latLng(lat, lon);
-    _marker.setLatLng(latlng);
-    _map.setView(latlng, DEFAULT_ZOOM, { animate: true });
-    setTimeout(() => { if (_marker) _marker.openPopup(); }, 400);
+    if (typeof L === 'undefined' || !_map || !_marker) return;
+    try {
+      const latlng = L.latLng(lat, lon);
+      _marker.setLatLng(latlng);
+      _map.setView(latlng, DEFAULT_ZOOM, { animate: true });
+      setTimeout(() => { if (_marker) _marker.openPopup(); }, 400);
+    } catch (err) {
+      console.error('[MapModule] Failed to update marker:', err);
+    }
   }
 
   /**
@@ -96,7 +121,7 @@ const MapModule = (() => {
    * Must be called after the map container transitions from hidden to visible.
    */
   function invalidateSize() {
-    if (_map) {
+    if (_map && typeof _map.invalidateSize === 'function') {
       setTimeout(() => _map.invalidateSize({ animate: false }), 120);
     }
   }

@@ -140,23 +140,27 @@ async function loadPeserta() {
   try {
     const url = GAS_ENDPOINT + '?action=getPeserta';
     const response = await fetch(url, {
-      method:  'GET',
-      headers: { 'Accept': 'application/json' },
+      method: 'GET',
+      mode:   'cors',
     });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
 
+    const text = await response.text();
     let result;
     try {
-      result = await response.json();
+      result = JSON.parse(text);
     } catch {
+      if (text.includes('signin') || text.includes('accounts.google.com') || text.startsWith('<!doctype')) {
+        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Harap pastikan Web App di-deploy dengan akses "Anyone".');
+      }
       throw new Error('Respons server bukan JSON valid.');
     }
 
     if (result.status === 'success' && Array.isArray(result.data)) {
-      AppState.pesertaList  = result.data;
+      AppState.pesertaList   = result.data;
       AppState.pesertaLoaded = true;
 
       // Populate datalist with NIM options
@@ -164,19 +168,19 @@ async function loadPeserta() {
       result.data.forEach((p) => {
         const option = document.createElement('option');
         option.value = p.nim;
-        option.label = p.nama;  // Shows name as label in some browsers
+        option.label = p.nama;
         El.nimList.appendChild(option);
       });
 
+      clearNimHint();
       console.info(`[App] Loaded ${result.data.length} peserta from tab "Nama".`);
     } else {
       console.warn('[App] getPeserta returned non-success:', result.message || result);
-      setNimHint('⚠️ Gagal memuat data peserta. Hubungi administrator.', 'error');
+      setNimHint(`⚠️ ${result.message || 'Gagal memuat data peserta.'}`, 'error');
     }
   } catch (err) {
     console.error('[App] Failed to load peserta:', err);
-    // Don't block the UI completely, but show a hint
-    setNimHint('⚠️ Tidak dapat memuat data peserta. Periksa koneksi internet.', 'error');
+    setNimHint(`⚠️ ${err.message || 'Tidak dapat memuat data peserta. Periksa koneksi internet.'}`, 'error');
   }
 }
 
