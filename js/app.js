@@ -140,9 +140,10 @@ function loadPeserta() {
   return new Promise((resolve) => {
     setNimHint('⏳ Memuat data peserta...', 'loading');
 
-    const callbackName = '__getPesertaCB_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+    const callbackName = '__getPesertaCB_' + Date.now();
     const script = document.createElement('script');
     let timer = null;
+    let callbackCalled = false;
 
     // Cleanup function: remove global callback & script tag
     function cleanup() {
@@ -155,19 +156,24 @@ function loadPeserta() {
 
     // Timeout handling (15 seconds)
     timer = setTimeout(() => {
-      cleanup();
-      console.warn('[App] JSONP getPeserta timed out.');
-      setNimHint('⚠️ Waktu pembacaan data peserta habis. Periksa koneksi internet Anda.', 'error');
-      resolve();
+      if (!callbackCalled) {
+        cleanup();
+        console.warn('[JSONP STATE B/TIMEOUT] Callback was not invoked within 15s.');
+        setNimHint('⚠️ [STATE B] Waktu pembacaan data peserta habis. Pastikan Web App GAS di-deploy dengan versi terbaru (New Version).', 'error');
+        resolve();
+      }
     }, 15000);
 
     // Global callback handler
-    window[callbackName] = function (result) {
+    window[callbackName] = function (response) {
+      callbackCalled = true;
+      console.log('[JSONP] CALLBACK DITERIMA');
+      console.log('[JSONP] RESPONSE:', response);
       cleanup();
 
-      if (result && result.status === 'success' && Array.isArray(result.data)) {
+      if (response && response.status === 'success' && Array.isArray(response.data)) {
         // Enforce string mapping to avoid number conversion / zero-stripping bugs
-        AppState.pesertaList = result.data.map((p) => ({
+        AppState.pesertaList = response.data.map((p) => ({
           nim:      String(p.nim || '').trim(),
           nama:     String(p.nama || '').trim(),
           fakultas: String(p.fakultas || '').trim(),
@@ -187,26 +193,41 @@ function loadPeserta() {
         });
 
         clearNimHint();
-        console.info(`[App] Successfully loaded ${AppState.pesertaList.length} peserta via JSONP from tab "Nama".`);
+        console.info(`[JSONP STATE C] Successfully loaded ${AppState.pesertaList.length} peserta from tab "Nama".`);
       } else {
-        const msg = (result && result.message) ? result.message : 'Gagal memuat data peserta.';
-        console.warn('[App] getPeserta returned non-success:', msg);
-        setNimHint(`⚠️ ${msg}`, 'error');
+        const msg = (response && response.message) ? response.message : 'Respons server tidak valid.';
+        console.warn('[JSONP] getPeserta returned non-success:', msg);
+        setNimHint(`⚠️ [STATE B] ${msg}`, 'error');
       }
       resolve();
     };
 
-    // Script load error handler
-    script.onerror = function () {
+    // Script load success handler
+    script.onload = function () {
+      console.log('[JSONP] script berhasil dimuat');
+      // If script loaded but callback was not triggered, Web App is returning raw JSON instead of JS callback
+      setTimeout(() => {
+        if (!callbackCalled && !AppState.pesertaLoaded) {
+          console.warn('[JSONP STATE B] Script tag loaded but response was raw JSON instead of callback JS.');
+          setNimHint('⚠️ [STATE B] Script dimuat tetapi Apps Script mengembalikan JSON biasa. Anda HARUS melakukan New Deployment di Google Apps Script.', 'error');
+        }
+      }, 1200);
+    };
+
+    // Script load error handler (State A)
+    script.onerror = function (error) {
       cleanup();
-      console.error('[App] Script element load error on JSONP request.');
-      setNimHint('⚠️ Tidak dapat terhubung ke server data peserta. Periksa koneksi internet.', 'error');
+      console.error('[JSONP STATE A] script ERROR:', error);
+      setNimHint('⚠️ [STATE A] Script error saat terhubung ke server data peserta. Periksa URL Apps Script.', 'error');
       resolve();
     };
 
     // Build URL with callback parameter and inject script tag
-    const url = `${GAS_ENDPOINT}?action=getPeserta&callback=${callbackName}`;
-    script.src = url;
+    const targetUrl = GAS_ENDPOINT + '?action=getPeserta&callback=' + encodeURIComponent(callbackName);
+    console.log('[JSONP] URL:', targetUrl);
+    console.log('[JSONP] callback:', callbackName);
+
+    script.src = targetUrl;
     document.head.appendChild(script);
   });
 }
