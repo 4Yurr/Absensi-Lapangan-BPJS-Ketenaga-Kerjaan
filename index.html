@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Website Absensi Kegiatan Lapangan — Catat kehadiran Anda di mana pun dengan GPS otomatis dan bukti foto kegiatan." />
+  <meta name="theme-color" content="#0b1120" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Absensi Kegiatan Lapangan</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ===================================================
+       HEADER
+  ==================================================== -->
+  <header class="app-header" role="banner">
+    <div class="header-inner">
+      <div class="header-icon" aria-hidden="true">📋</div>
+      <div>
+        <h1 class="header-title">Absensi Lapangan</h1>
+        <p class="header-sub">Kegiatan BPJS Kesehatan</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================
+       MAIN CONTENT
+  ==================================================== -->
+  <main class="main-container" role="main">
+
+    <!-- ─── STEP 1: IDENTITAS ─── -->
+    <section class="card" id="section-identity" aria-labelledby="title-identity">
+      <div class="card-header">
+        <span class="step-badge" aria-hidden="true">1</span>
+        <h2 class="card-title" id="title-identity">Identitas Anda</h2>
+      </div>
+
+      <!-- NIM — with datalist for autocomplete from tab "Nama" -->
+      <div class="form-group">
+        <label class="form-label" for="inputNIM">
+          NIM <span class="required" aria-label="wajib diisi">*</span>
+        </label>
+        <input
+          type="text"
+          id="inputNIM"
+          class="form-input"
+          placeholder="Masukkan atau pilih NIM Anda"
+          inputmode="numeric"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          maxlength="20"
+          list="nimList"
+          aria-describedby="nimHelp"
+        />
+        <datalist id="nimList">
+          <!-- Options will be populated by app.js from tab "Nama" -->
+        </datalist>
+        <small id="nimHelp" class="form-hint hidden"></small>
+      </div>
+
+      <!-- Nama — READ-ONLY, auto-filled from tab "Nama" lookup -->
+      <div class="form-group">
+        <label class="form-label" for="inputNama">
+          Nama Lengkap <span class="required" aria-label="wajib diisi">*</span>
+        </label>
+        <input
+          type="text"
+          id="inputNama"
+          class="form-input input-readonly"
+          placeholder="Nama akan terisi otomatis setelah NIM valid"
+          readonly
+          tabindex="-1"
+        />
+      </div>
+    </section>
+
+    <!-- ─── STEP 2: LOKASI ─── -->
+    <section class="card" id="section-location" aria-labelledby="title-location">
+      <div class="card-header">
+        <span class="step-badge" aria-hidden="true">2</span>
+        <h2 class="card-title" id="title-location">Lokasi Kegiatan</h2>
+      </div>
+      <p class="card-desc">
+        Tekan tombol di bawah untuk mendeteksi posisi GPS Anda secara otomatis.
+        Lokasi tidak dapat diubah secara manual.
+      </p>
+
+      <button type="button" id="btnGetLocation" class="btn btn-secondary" aria-live="polite">
+        <span class="btn-icon" aria-hidden="true">📍</span>
+        <span id="btnGetLocationText">Ambil Lokasi Saya</span>
+      </button>
+
+      <!-- Status Lokasi -->
+      <div id="locationStatus" class="location-status hidden" role="status" aria-live="polite"></div>
+
+      <!-- Peta Leaflet (Read-Only) -->
+      <div id="mapWrapper" class="map-wrapper hidden" aria-label="Peta posisi Anda (hanya baca)">
+        <div id="map" aria-hidden="true"></div>
+      </div>
+
+      <!-- Tampilan Alamat Reverse Geocoding -->
+      <div id="addressCard" class="address-card hidden" aria-live="polite">
+        <div class="address-icon" aria-hidden="true">📍</div>
+        <div class="address-content">
+          <p class="address-label">Lokasi Terdeteksi</p>
+          <p id="addressText" class="address-text">Mendeteksi alamat...</p>
+          <div class="coords-display" aria-label="Koordinat GPS">
+            <span id="latDisplay">Lat: —</span>
+            <span id="lonDisplay">Long: —</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── STEP 3: FOTO ─── -->
+    <section class="card" id="section-photo" aria-labelledby="title-photo">
+      <div class="card-header">
+        <span class="step-badge" aria-hidden="true">3</span>
+        <h2 class="card-title" id="title-photo">Foto Kegiatan</h2>
+      </div>
+      <p class="card-desc">
+        Ambil foto langsung dengan kamera perangkat sebagai bukti kehadiran di lapangan.
+        Foto akan dikirim dan disimpan di Google Drive.
+      </p>
+
+      <!--
+        Hidden file input — camera only.
+        capture="environment" instructs mobile browsers to open the rear camera directly.
+        accept="image/*" limits to image files only.
+        NOTE: On desktop browsers, capture attribute is ignored and a file picker may appear.
+        This is a browser limitation, not a system limitation. See README.md.
+      -->
+      <input
+        type="file"
+        id="photoInput"
+        accept="image/*"
+        capture="environment"
+        class="photo-input-hidden"
+        aria-label="Ambil foto kegiatan dengan kamera"
+      />
+
+      <button type="button" id="btnTakePhoto" class="btn btn-secondary">
+        <span class="btn-icon" aria-hidden="true">📷</span>
+        <span id="btnTakePhotoText">Ambil Foto</span>
+      </button>
+
+      <!-- Preview Foto -->
+      <div id="photoPreviewWrapper" class="photo-preview-wrapper hidden">
+        <div class="photo-preview-label">
+          <span class="photo-ok-badge" aria-hidden="true">✓</span> Foto siap dikirim
+        </div>
+        <img
+          id="photoPreview"
+          class="photo-preview"
+          src=""
+          alt="Preview foto kegiatan yang diambil"
+        />
+        <button type="button" id="btnChangePhoto" class="btn-text-sm">
+          📷 Ambil Ulang Foto
+        </button>
+      </div>
+    </section>
+
+    <!-- ─── STEP 4: SUBMIT ─── -->
+    <section class="card card-submit" id="section-submit" aria-labelledby="title-submit">
+      <button type="button" id="btnSubmit" class="btn btn-primary" disabled aria-label="Kirim data absensi">
+        <span id="btnSubmitIcon" class="btn-icon" aria-hidden="true">🚀</span>
+        <span id="btnSubmitText">Kirim Absensi</span>
+      </button>
+      <p class="submit-note" id="submitHint">
+        Pastikan NIM, Lokasi, dan Foto sudah diisi sebelum mengirim.
+      </p>
+
+      <!-- Checklist kesiapan submit -->
+      <div class="readiness-check" id="readinessCheck">
+        <div class="check-item" id="check-nim">
+          <span class="check-dot" aria-hidden="true"></span>
+          <span>NIM Valid</span>
+        </div>
+        <div class="check-item" id="check-nama">
+          <span class="check-dot" aria-hidden="true"></span>
+          <span>Nama Terisi</span>
+        </div>
+        <div class="check-item" id="check-lokasi">
+          <span class="check-dot" aria-hidden="true"></span>
+          <span>Lokasi GPS</span>
+        </div>
+        <div class="check-item" id="check-foto">
+          <span class="check-dot" aria-hidden="true"></span>
+          <span>Foto Kegiatan</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================================================
+       MODAL OVERLAY — Feedback Sukses / Error
+  ==================================================== -->
+  <div
+    id="modalOverlay"
+    class="modal-overlay hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modalTitle"
+    aria-describedby="modalMessage"
+  >
+    <div class="modal-card">
+      <div id="modalIcon" class="modal-icon" aria-hidden="true">✅</div>
+      <h2 id="modalTitle" class="modal-title">Judul Modal</h2>
+      <p id="modalMessage" class="modal-message">Pesan modal.</p>
+      <div id="modalDetail" class="modal-detail hidden" aria-label="Detail absensi"></div>
+      <button type="button" id="modalBtn" class="btn btn-primary modal-btn">
+        Tutup
+      </button>
+    </div>
+  </div>
+
+  <!-- ===================================================
+       LOADING OVERLAY
+  ==================================================== -->
+  <div id="loadingOverlay" class="loading-overlay hidden" role="status" aria-live="assertive">
+    <div class="loading-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loadingText" class="loading-text">Mengirim data absensi...</p>
+      <p class="loading-sub">Harap tunggu, jangan tutup halaman ini.</p>
+    </div>
+  </div>
+
+  <!-- ===================================================
+       SCRIPTS
+  ==================================================== -->
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPeE=" crossorigin=""></script>
+  <!-- App Modules (order matters) -->
+  <script src="js/map.js"></script>
+  <script src="js/location.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
