@@ -94,11 +94,13 @@ function hide(el) { if (el) el.classList.add('hidden'); }
 
 /** Set the location status message with a visual type. */
 function setLocationStatus(message, type = 'info') {
-  let iconHtml = '';
   if (type === 'success') {
-    iconHtml = '<span class="status-ok-badge" aria-hidden="true">✓</span> ';
+    El.locationStatus.innerHTML = '<span class="status-ok-badge" aria-hidden="true">✓</span>';
+  } else if (type === 'error') {
+    El.locationStatus.innerHTML = `<span class="status-err-badge" aria-hidden="true">✕</span> <span>${message}</span>`;
+  } else {
+    El.locationStatus.innerHTML = `<span>${message}</span>`;
   }
-  El.locationStatus.innerHTML = `${iconHtml}<span>${message}</span>`;
   El.locationStatus.className = `location-status status-${type}`;
   show(El.locationStatus);
 }
