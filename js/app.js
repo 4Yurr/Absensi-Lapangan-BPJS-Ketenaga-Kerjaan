@@ -67,15 +67,10 @@ const El = {
   photoPreview:        document.getElementById('photoPreview'),
   btnChangePhoto:      document.getElementById('btnChangePhoto'),
 
-  // Submit & Readiness
+  // Submit
   btnSubmit:      document.getElementById('btnSubmit'),
   btnSubmitIcon:  document.getElementById('btnSubmitIcon'),
   btnSubmitText:  document.getElementById('btnSubmitText'),
-  submitHint:     document.getElementById('submitHint'),
-  checkNIM:       document.getElementById('check-nim'),
-  checkNama:      document.getElementById('check-nama'),
-  checkLokasi:    document.getElementById('check-lokasi'),
-  checkFoto:      document.getElementById('check-foto'),
 
   // Modal
   modalOverlay:   document.getElementById('modalOverlay'),
@@ -104,28 +99,9 @@ function setLocationStatus(message, type = 'info') {
   show(El.locationStatus);
 }
 
-/** Mark a readiness check item as ready or not. */
-function setCheckReady(el, ready) {
-  if (ready) {
-    el.classList.add('ready');
-  } else {
-    el.classList.remove('ready');
-  }
-}
-
-/** Evaluate all conditions and enable/disable Submit button. */
+/** Internal state update function (kept for event handler compatibility) */
 function updateReadiness() {
-  const nimOk    = AppState.selectedNIM  !== null;
-  const namaOk   = AppState.selectedNama !== null;
-  const lokasiOk = AppState.lat !== null && AppState.lon !== null;
-  const fotoOk   = AppState.photoBase64 !== null;
-
-  setCheckReady(El.checkNIM,    nimOk);
-  setCheckReady(El.checkNama,   namaOk);
-  setCheckReady(El.checkLokasi, lokasiOk);
-  setCheckReady(El.checkFoto,   fotoOk);
-
-  El.btnSubmit.disabled = !(nimOk && namaOk && lokasiOk && fotoOk);
+  // Validation is dynamically checked on submit click
 }
 
 /* ================================================================
@@ -404,20 +380,36 @@ El.btnSubmit.addEventListener('click', handleSubmit);
 async function handleSubmit() {
   if (AppState.isSubmitting) return;
 
-  const nim  = AppState.selectedNIM;
-  const nama = AppState.selectedNama;
+  const rawNim = El.inputNIM.value.trim();
+  const nim    = AppState.selectedNIM;
+  const nama   = AppState.selectedNama;
+  const latOk  = AppState.lat !== null && AppState.lon !== null;
+  const fotoOk = AppState.photoBase64 !== null;
 
-  /* ─── Final client-side validation ─── */
-  if (!nim || !nama) {
-    showModal('error', 'Data Tidak Lengkap', 'NIM belum dipilih atau tidak valid. Pilih NIM dari daftar peserta.');
-    return;
+  /* ─── Client-side validation with explicit feedback ─── */
+  const missing = [];
+
+  if (!rawNim) {
+    missing.push('Nomor NIM wajib diisi.');
+  } else if (!nim || !nama) {
+    missing.push('NIM tidak terdaftar. Silakan periksa kembali NIM Anda.');
   }
-  if (!AppState.lat || !AppState.lon) {
-    showModal('error', 'Lokasi Belum Diambil', 'Tekan tombol "Ambil Lokasi Saya" dan tunggu hingga lokasi GPS berhasil terdeteksi.');
-    return;
+
+  if (!latOk) {
+    missing.push('Lokasi GPS belum diambil.');
   }
-  if (!AppState.photoBase64) {
-    showModal('error', 'Foto Belum Diambil', 'Foto kegiatan wajib diambil langsung dengan kamera sebagai bukti kehadiran di lapangan.');
+
+  if (!fotoOk) {
+    missing.push('Foto kegiatan belum diambil.');
+  }
+
+  if (missing.length > 0) {
+    if (missing.length === 1) {
+      showModal('error', 'Data Belum Lengkap', missing[0]);
+    } else {
+      const msg = 'Lengkapi data berikut sebelum mengirim:\n' + missing.map(m => `• ${m}`).join('\n');
+      showModal('error', 'Data Belum Lengkap', msg);
+    }
     return;
   }
 

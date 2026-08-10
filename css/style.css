@@ -617,6 +617,7 @@ a { color: var(--clr-primary); text-decoration: none; }
   color: var(--clr-text-muted);
   line-height: 1.5;
   margin-bottom: var(--sp-4);
+  white-space: pre-wrap;
 }
 
 .modal-detail {
