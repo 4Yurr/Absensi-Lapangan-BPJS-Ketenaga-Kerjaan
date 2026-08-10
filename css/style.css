@@ -384,25 +384,26 @@ a { color: var(--clr-primary); text-decoration: none; }
   font-weight: 500;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
-.status-ok-badge {
+.status-ok-badge, .photo-ok-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: var(--r-full);
-  background: var(--clr-accent);
+  background: #059669;
   color: #ffffff;
-  font-size: 0.65rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  margin-right: 6px;
+  margin: 0;
   flex-shrink: 0;
 }
 
 .status-info { background: rgba(13, 148, 136, 0.08); color: var(--clr-primary-dk); }
-.status-success { background: rgba(5, 150, 105, 0.08); color: var(--clr-accent); }
+.status-success { background: transparent; padding: 0; }
 .status-error { background: rgba(220, 38, 38, 0.08); color: var(--clr-error); }
 
 .map-wrapper {
