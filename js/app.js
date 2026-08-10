@@ -474,6 +474,13 @@ async function handleSubmit() {
       showModal('success', 'Absensi Berhasil!', 'Data kehadiran Anda telah berhasil dicatat.', detail);
       resetAfterSuccess();
 
+    } else if (result.status === 'duplicate') {
+      showModal(
+        'error',
+        'Absensi Sudah Tercatat',
+        'Anda sudah melakukan absensi hari ini. Absensi hanya dapat dilakukan satu kali dalam sehari.'
+      );
+
     } else if (result.status === 'error') {
       showModal('error', 'Absensi Ditolak', result.message || 'Terjadi kesalahan pada server.');
 
