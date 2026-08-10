@@ -382,6 +382,23 @@ a { color: var(--clr-primary); text-decoration: none; }
   border-radius: var(--r-sm);
   font-size: 0.8rem;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.status-ok-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-full);
+  background: var(--clr-accent);
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .status-info { background: rgba(13, 148, 136, 0.08); color: var(--clr-primary-dk); }
