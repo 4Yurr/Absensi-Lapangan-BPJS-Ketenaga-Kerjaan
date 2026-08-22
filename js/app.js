@@ -7,7 +7,8 @@
  *   - LocationModule  (GPS & Reverse Geocoding)
  *   - MapModule       (Leaflet read-only map)
  *   - CameraModule    (Photo capture & compression)
- *   - Data Peserta    (NIM lookup from tab "Nama" via GAS backend)
+ *   - Data Peserta    (NIM lookup dari database peserta via GAS backend)
+ *   - Sesi Banner     (Status sesi Pagi/Sore berdasarkan waktu server WIB)
  *   - Form validation & submit flow
  *   - HTTP POST to Google Apps Script backend
  */
@@ -32,17 +33,29 @@ const AppState = {
   photoFileName: null,    // Original file name
   isSubmitting:  false,   // Guard against double-submit
 
-  /* ─── Peserta State (from tab "Nama") ─── */
-  pesertaList:   [],      // [{nim, nama, fakultas, prodi}, ...] loaded from sheet
+  /* ─── Peserta State (from database peserta) ─── */
+  pesertaList:   [],      // [{nim, nama}, ...] loaded from server
   pesertaLoaded: false,   // True after successful fetch
   selectedNIM:   null,    // Currently validated NIM
   selectedNama:  null,    // Name from master data (read-only)
+
+  /* ─── Session State (from server WIB time) ─── */
+  serverSesi:    null,    // 'PAGI' | 'SORE' | null
+  serverSesiValid: false, // True if currently in a valid session window
 };
 
 /* ================================================================
    DOM ELEMENTS
    ================================================================ */
 const El = {
+  // Session Banner
+  sessionBanner:      document.getElementById('sessionBanner'),
+  sessionIcon:        document.getElementById('sessionIcon'),
+  sessionLabel:       document.getElementById('sessionLabel'),
+  sessionSublabel:    document.getElementById('sessionSublabel'),
+  sessionTimeBadge:   document.getElementById('sessionTimeBadge'),
+  sessionTimeDisplay: document.getElementById('sessionTimeDisplay'),
+
   // Identity
   inputNIM:       document.getElementById('inputNIM'),
   inputNama:      document.getElementById('inputNama'),
@@ -69,7 +82,6 @@ const El = {
 
   // Submit
   btnSubmit:      document.getElementById('btnSubmit'),
-  btnSubmitIcon:  document.getElementById('btnSubmitIcon'),
   btnSubmitText:  document.getElementById('btnSubmitText'),
 
   // Modal
@@ -111,24 +123,157 @@ function updateReadiness() {
 }
 
 /* ================================================================
-   DATA PESERTA — Load on page open (from tab "Nama")
+   SESSION BANNER — Tampilkan status sesi berdasarkan waktu server WIB
    ================================================================ */
 
 /**
- * Fetch peserta list from GAS backend (tab "Nama") at page load.
- * Populates the NIM datalist for autocomplete.
+ * Query waktu server WIB, perbarui session banner, dan simpan ke AppState.
+ * Dilakukan saat init. Jika gagal, fallback ke estimasi waktu browser.
+ */
+async function loadServerSession() {
+  try {
+    const url = GAS_ENDPOINT + '?action=getServerTime';
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const text = await response.text();
+    let result;
+    try { result = JSON.parse(text); } catch { throw new Error('Respons server tidak valid.'); }
+
+    if (result.status === 'success') {
+      AppState.serverSesi      = result.sesi      || null;
+      AppState.serverSesiValid = result.sesiValid  || false;
+
+      updateSessionBanner({
+        valid:    result.sesiValid,
+        sesi:     result.sesi,
+        time:     result.time,     // "HH:mm:ss"
+        message:  result.message,
+      });
+    } else {
+      throw new Error(result.message || 'Gagal mendapatkan waktu server.');
+    }
+
+  } catch (err) {
+    console.warn('[App] loadServerSession error:', err.message);
+    // Fallback: estimasi dari browser (hanya untuk UI, bukan validasi)
+    const wibTime = getWIBTime();
+    const fallbackSesi = estimateSesiFallback(wibTime.hour);
+    AppState.serverSesi      = fallbackSesi.sesi;
+    AppState.serverSesiValid = fallbackSesi.valid;
+
+    updateSessionBanner({
+      valid:   fallbackSesi.valid,
+      sesi:    fallbackSesi.sesi,
+      time:    wibTime.timeStr,
+      message: fallbackSesi.message + ' (estimasi browser — validasi tetap dilakukan server)',
+    });
+  }
+}
+
+/**
+ * Perbarui tampilan session banner berdasarkan status sesi.
+ * @param {{ valid: boolean, sesi: string|null, time: string, message: string }} info
+ */
+function updateSessionBanner({ valid, sesi, time, message }) {
+  // Perbarui jam tampilan
+  if (El.sessionTimeDisplay && time) {
+    El.sessionTimeDisplay.textContent = time.substring(0, 5); // HH:mm
+  }
+
+  if (valid && sesi === 'PAGI') {
+    El.sessionBanner.className = 'session-banner session-pagi';
+    El.sessionLabel.textContent = 'ABSENSI PAGI';
+    El.sessionSublabel.textContent = 'Batas waktu: sebelum 09:00 WIB';
+    El.sessionIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <line x1="12" y1="1" x2="12" y2="3"/>
+        <line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/>
+        <line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>`;
+
+  } else if (valid && sesi === 'SORE') {
+    El.sessionBanner.className = 'session-banner session-sore';
+    El.sessionLabel.textContent = 'ABSENSI SORE';
+    El.sessionSublabel.textContent = 'Absensi sore dibuka mulai 16:00 WIB';
+    El.sessionIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 18a5 5 0 0 0-10 0"/>
+        <line x1="12" y1="2" x2="12" y2="9"/>
+        <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/>
+        <line x1="1" y1="18" x2="3" y2="18"/>
+        <line x1="21" y1="18" x2="23" y2="18"/>
+        <line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/>
+        <line x1="23" y1="22" x2="1" y2="22"/>
+        <polyline points="8 6 12 2 16 6"/>
+      </svg>`;
+
+  } else {
+    // Di luar jam absensi
+    El.sessionBanner.className = 'session-banner session-closed';
+    El.sessionLabel.textContent = 'DI LUAR JAM ABSENSI';
+    El.sessionSublabel.textContent = message || 'Absensi pagi: sebelum 09:00 WIB | Absensi sore: mulai 16:00 WIB';
+    El.sessionIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>`;
+  }
+}
+
+/**
+ * Hitung estimasi WIB dari browser untuk fallback UI.
+ * Bukan untuk validasi — hanya sebagai petunjuk tampilan.
+ */
+function getWIBTime() {
+  const now = new Date();
+  const wibFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+  const parts = wibFormatter.formatToParts(now);
+  const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+  const m = parseInt(parts.find(p => p.type === 'minute').value, 10);
+  const s = parseInt(parts.find(p => p.type === 'second').value, 10);
+  const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return { hour: h, minute: m, second: s, timeStr };
+}
+
+/**
+ * Estimasi sesi berdasarkan jam WIB (untuk fallback browser).
+ */
+function estimateSesiFallback(hour) {
+  if (hour < 9) {
+    return { valid: true,  sesi: 'PAGI', message: 'Sesi Pagi — sebelum 09:00 WIB' };
+  }
+  if (hour < 16) {
+    return { valid: false, sesi: null,   message: 'Di luar jam absensi' };
+  }
+  return { valid: true, sesi: 'SORE', message: 'Sesi Sore — mulai 16:00 WIB' };
+}
+
+/* ================================================================
+   DATA PESERTA — Load on page open
+   ================================================================ */
+
+/**
+ * Fetch peserta list dari GAS backend (database peserta baru) saat halaman dibuka.
+ * Mengisi NIM datalist untuk autocomplete.
  */
 async function loadPeserta() {
   try {
     const url = GAS_ENDPOINT + '?action=getPeserta';
-    const response = await fetch(url, {
-      method: 'GET',
-      mode:   'cors',
-    });
+    const response = await fetch(url, { method: 'GET', mode: 'cors' });
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const text = await response.text();
     let result;
@@ -136,7 +281,7 @@ async function loadPeserta() {
       result = JSON.parse(text);
     } catch {
       if (text.includes('signin') || text.includes('accounts.google.com') || text.startsWith('<!doctype')) {
-        throw new Error('Web App Google Apps Script memerlukan izin "Anyone". Pastikan Web App di-deploy dengan akses "Anyone".');
+        throw new Error('Web App memerlukan izin "Anyone". Pastikan deploy dengan akses "Anyone".');
       }
       throw new Error('Respons server bukan JSON valid.');
     }
@@ -145,7 +290,7 @@ async function loadPeserta() {
       AppState.pesertaList   = result.data;
       AppState.pesertaLoaded = true;
 
-      // Populate datalist with NIM options
+      // Populate datalist dengan opsi NIM
       El.nimList.innerHTML = '';
       result.data.forEach((p) => {
         const option = document.createElement('option');
@@ -155,9 +300,9 @@ async function loadPeserta() {
       });
 
       clearNimHint();
-      console.info(`[App] Loaded ${result.data.length} peserta from tab "Nama".`);
+      console.info(`[App] ${result.data.length} peserta dimuat dari database peserta.`);
     } else {
-      console.warn('[App] getPeserta returned non-success:', result.message || result);
+      console.warn('[App] getPeserta non-success:', result.message || result);
       setNimHint(result.message || 'Gagal memuat data peserta.', 'error');
     }
   } catch (err) {
@@ -167,9 +312,7 @@ async function loadPeserta() {
 }
 
 /**
- * Set hint text below NIM input.
- * @param {string} text - Hint message
- * @param {string} type - 'loading' | 'success' | 'error'
+ * Set hint text di bawah input NIM.
  */
 function setNimHint(text, type) {
   El.nimHelp.textContent = text;
@@ -183,10 +326,9 @@ function clearNimHint() {
 }
 
 /* ================================================================
-   NIM INPUT — Lookup from tab "Nama"
+   NIM INPUT — Lookup dari daftar peserta
    ================================================================ */
 
-/** Debounce timer for NIM lookup */
 let _nimDebounce = null;
 
 El.inputNIM.addEventListener('input', () => {
@@ -194,7 +336,7 @@ El.inputNIM.addEventListener('input', () => {
 
   const nimValue = El.inputNIM.value.trim();
 
-  // Clear previous selection
+  // Bersihkan selection sebelumnya
   AppState.selectedNIM  = null;
   AppState.selectedNama = null;
   El.inputNama.value     = '';
@@ -207,13 +349,11 @@ El.inputNIM.addEventListener('input', () => {
     return;
   }
 
-  // Debounce: wait 300ms after user stops typing
-  _nimDebounce = setTimeout(() => {
-    lookupNIM(nimValue);
-  }, 300);
+  // Debounce 300ms setelah user berhenti mengetik
+  _nimDebounce = setTimeout(() => { lookupNIM(nimValue); }, 300);
 });
 
-// Also trigger lookup on change (when user selects from datalist)
+// Trigger lookup juga saat user memilih dari datalist
 El.inputNIM.addEventListener('change', () => {
   const nimValue = El.inputNIM.value.trim();
   if (nimValue !== '') {
@@ -223,9 +363,7 @@ El.inputNIM.addEventListener('change', () => {
 });
 
 /**
- * Look up NIM in pesertaList (client-side search from tab "Nama").
- * If pesertaList is loaded, performs instant local search.
- * @param {string} nim
+ * Cari NIM di pesertaList (pencarian lokal client-side).
  */
 function lookupNIM(nim) {
   if (!AppState.pesertaLoaded) {
@@ -234,13 +372,9 @@ function lookupNIM(nim) {
     return;
   }
 
-  // Find match in peserta list
-  const match = AppState.pesertaList.find(
-    (p) => p.nim === nim
-  );
+  const match = AppState.pesertaList.find((p) => p.nim === nim);
 
   if (match) {
-    // NIM found — fill name (read-only)
     AppState.selectedNIM  = match.nim;
     AppState.selectedNama = match.nama;
 
@@ -251,7 +385,6 @@ function lookupNIM(nim) {
 
     setNimHint(`Peserta terverifikasi: ${match.nama}`, 'success');
   } else {
-    // NIM not found
     AppState.selectedNIM  = null;
     AppState.selectedNama = null;
     El.inputNama.value     = '';
@@ -271,13 +404,11 @@ function lookupNIM(nim) {
 El.btnGetLocation.addEventListener('click', handleGetLocation);
 
 async function handleGetLocation() {
-  // UI: loading state
   El.btnGetLocation.disabled = true;
   El.btnGetLocation.classList.add('btn-loading');
   El.btnGetLocationText.textContent = 'Mendeteksi lokasi...';
   setLocationStatus('Membaca koordinat GPS perangkat Anda...', 'info');
 
-  // Reset previous location state
   AppState.lat     = null;
   AppState.lon     = null;
   AppState.address = null;
@@ -286,21 +417,18 @@ async function handleGetLocation() {
   updateReadiness();
 
   try {
-    /* ─── Step 1: Get GPS coordinates ─── */
+    /* ─── Step 1: Koordinat GPS ─── */
     const { lat, lon } = await LocationModule.requestLocation();
     AppState.lat = lat;
     AppState.lon = lon;
 
-    // Update UI with coordinates
     El.latDisplay.textContent = `Lat: ${lat.toFixed(6)}`;
     El.lonDisplay.textContent = `Long: ${lon.toFixed(6)}`;
 
-    // Show map container then render map
     show(El.mapWrapper);
     MapModule.initMap(lat, lon);
     MapModule.invalidateSize();
 
-    // Show address card with loading text
     El.addressText.textContent = 'Mendeteksi nama lokasi...';
     show(El.addressCard);
 
@@ -308,17 +436,15 @@ async function handleGetLocation() {
     El.btnGetLocationText.textContent = 'Perbarui Lokasi';
     updateReadiness();
 
-    /* ─── Step 2: Reverse Geocoding (non-blocking for submit) ─── */
-    const address = await LocationModule.reverseGeocode(lat, lon);
+    /* ─── Step 2: Reverse Geocoding (non-blocking) ─── */
+    const address    = await LocationModule.reverseGeocode(lat, lon);
     AppState.address = address;
     El.addressText.textContent = address;
 
   } catch (err) {
-    // GPS failed — clear state
     AppState.lat     = null;
     AppState.lon     = null;
     AppState.address = null;
-
     hide(El.mapWrapper);
     hide(El.addressCard);
     setLocationStatus(err.message, 'error');
@@ -341,7 +467,6 @@ El.photoInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  // UI: disable button while processing
   El.btnTakePhoto.disabled = true;
   El.btnTakePhoto.classList.add('btn-loading');
 
@@ -374,7 +499,6 @@ El.photoInput.addEventListener('change', (e) => {
     }
   );
 
-  // Reset so same file can be reselected after "Ambil Ulang Foto"
   e.target.value = '';
 });
 
@@ -392,7 +516,7 @@ async function handleSubmit() {
   const latOk  = AppState.lat !== null && AppState.lon !== null;
   const fotoOk = AppState.photoBase64 !== null;
 
-  /* ─── Client-side validation with explicit feedback ─── */
+  /* ─── Client-side validation ─── */
   const missing = [];
 
   if (!rawNim) {
@@ -410,12 +534,10 @@ async function handleSubmit() {
   }
 
   if (missing.length > 0) {
-    if (missing.length === 1) {
-      showModal('error', 'Data Belum Lengkap', missing[0]);
-    } else {
-      const msg = 'Lengkapi data berikut sebelum mengirim:\n' + missing.map(m => `• ${m}`).join('\n');
-      showModal('error', 'Data Belum Lengkap', msg);
-    }
+    const msg = missing.length === 1
+      ? missing[0]
+      : 'Lengkapi data berikut sebelum mengirim:\n' + missing.map(m => `• ${m}`).join('\n');
+    showModal('error', 'Data Belum Lengkap', msg);
     return;
   }
 
@@ -430,11 +552,11 @@ async function handleSubmit() {
   const payload = {
     nim,
     nama,
-    latitude:      AppState.lat,
-    longitude:     AppState.lon,
-    lokasi:        AppState.address || `Koordinat: ${AppState.lat}, ${AppState.lon}`,
-    fotoBase64:    AppState.photoBase64,
-    fotoFileName:  AppState.photoFileName || 'foto_kegiatan.jpg',
+    latitude:     AppState.lat,
+    longitude:    AppState.lon,
+    lokasi:       AppState.address || `Koordinat: ${AppState.lat}, ${AppState.lon}`,
+    fotoBase64:   AppState.photoBase64,
+    fotoFileName: AppState.photoFileName || 'foto_kegiatan.jpg',
   };
 
   try {
@@ -463,23 +585,39 @@ async function handleSubmit() {
 
     if (result.status === 'success') {
       const d = result.data || {};
+      const sesiStr = d.sesi ? d.sesi.charAt(0) + d.sesi.slice(1).toLowerCase() : '';
+
       const detail = [
-        d.nim     ? `NIM     : ${d.nim}`     : '',
-        d.nama    ? `Nama    : ${d.nama}`    : '',
-        d.tanggal ? `Tanggal : ${d.tanggal}` : '',
-        d.jam     ? `Jam     : ${d.jam}`     : '',
-        d.lokasi  ? `Lokasi  : ${d.lokasi}`  : '',
+        d.nim     ? `NIM     : ${d.nim}`              : '',
+        d.nama    ? `Nama    : ${d.nama}`              : '',
+        d.tanggal ? `Tanggal : ${d.tanggal}`           : '',
+        sesiStr   ? `Sesi    : ${sesiStr}`             : '',
+        d.jam     ? `Jam     : ${d.jam} WIB`           : '',
+        d.lokasi  ? `Lokasi  : ${d.lokasi}`            : '',
       ].filter(Boolean).join('\n');
 
       showModal('success', 'Absensi Berhasil!', 'Data kehadiran Anda telah berhasil dicatat.', detail);
+
+      // Perbarui session banner setelah sukses
+      loadServerSession();
       resetAfterSuccess();
 
     } else if (result.status === 'duplicate') {
-      showModal(
-        'error',
-        'Absensi Sudah Tercatat',
-        'Anda sudah melakukan absensi hari ini. Absensi hanya dapat dilakukan satu kali dalam sehari.'
-      );
+      // Tampilkan pesan dengan nama sesi yang spesifik
+      const sesiName = result.sesi
+        ? result.sesi.charAt(0) + result.sesi.slice(1).toLowerCase()
+        : '';
+      const dupMsg = result.message ||
+        (sesiName
+          ? `Anda sudah melakukan absensi ${sesiName} hari ini.`
+          : 'Anda sudah melakukan absensi pada sesi ini hari ini.');
+      showModal('error', 'Absensi Sudah Tercatat', dupMsg);
+
+    } else if (result.status === 'time_invalid') {
+      // Absensi di luar jam yang diperbolehkan
+      showModal('error', 'Di Luar Jam Absensi', result.message || 'Waktu absensi tidak valid.');
+      // Perbarui session banner
+      loadServerSession();
 
     } else if (result.status === 'error') {
       showModal('error', 'Absensi Ditolak', result.message || 'Terjadi kesalahan pada server.');
@@ -517,7 +655,6 @@ async function handleSubmit() {
 function showModal(type, title, message, detail = '') {
   const isSuccess = (type === 'success');
 
-  // Render clean SVG icon instead of raw emoji
   if (isSuccess) {
     El.modalIcon.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -536,9 +673,7 @@ function showModal(type, title, message, detail = '') {
   El.modalIcon.className      = `modal-icon modal-icon-${type}`;
   El.modalTitle.textContent   = title;
   El.modalMessage.textContent = message;
-
-  // Update modal card top-border color class
-  El.modalCard.className = `modal-card modal-${type}`;
+  El.modalCard.className      = `modal-card modal-${type}`;
 
   if (detail) {
     El.modalDetail.textContent = detail;
@@ -604,6 +739,14 @@ function resetAfterSuccess() {
    ================================================================ */
 (function init() {
   updateReadiness();
-  loadPeserta();
-  console.info('[App] Absensi Lapangan initialized. Loading data peserta dari tab "Nama"...');
+
+  // Load data peserta dan status sesi secara paralel
+  Promise.all([
+    loadPeserta(),
+    loadServerSession(),
+  ]).catch((err) => {
+    console.error('[App] Init error:', err);
+  });
+
+  console.info('[App] Absensi BPJS Ketenagakerjaan initialized.');
 })();

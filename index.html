@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="Website Absensi Kegiatan Lapangan untuk Mahasiswa / Peserta Magang BPJS Kesehatan. Peta GPS dinamis, foto kamera langsung, dan pencatatan otomatis." />
+  <meta name="description" content="Website Absensi Kegiatan Lapangan untuk Mahasiswa / Peserta Magang BPJS Ketenagakerjaan. Peta GPS dinamis, foto kamera langsung, dan pencatatan otomatis." />
   <meta name="theme-color" content="#080e1a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Absensi Kegiatan Lapangan</title>
+  <title>Absensi Magang BPJS Ketenagakerjaan</title>
 
   <!-- Leaflet CSS (local file for max reliability) -->
   <link rel="stylesheet" href="css/leaflet.css" />
@@ -38,6 +38,30 @@
   </header>
 
   <!-- ===================================================
+       BANNER SESI AKTIF
+       Ditampilkan di bawah header, sebelum form.
+       Status sesi diperbarui oleh app.js berdasarkan waktu server.
+  ==================================================== -->
+  <div id="sessionBanner" class="session-banner session-loading" role="status" aria-live="polite" aria-label="Status sesi absensi">
+    <div class="session-banner-inner">
+      <div class="session-icon" aria-hidden="true" id="sessionIcon">
+        <!-- Icon diisi oleh JS -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <div class="session-info">
+        <p class="session-label" id="sessionLabel">Memeriksa waktu server...</p>
+        <p class="session-sublabel" id="sessionSublabel">Harap tunggu</p>
+      </div>
+      <div class="session-time-badge" id="sessionTimeBadge" aria-hidden="true">
+        <span id="sessionTimeDisplay">--:--</span>
+        <span class="session-tz">WIB</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================
        MAIN CONTENT
   ==================================================== -->
   <main class="main-container" role="main">
@@ -49,7 +73,7 @@
         <h2 class="card-title" id="title-identity">Identitas Anda</h2>
       </div>
 
-      <!-- NIM — with datalist for autocomplete from tab "Nama" -->
+      <!-- NIM — with datalist for autocomplete -->
       <div class="form-group">
         <label class="form-label" for="inputNIM">
           NIM <span class="required" aria-label="wajib diisi">*</span>
@@ -68,12 +92,12 @@
           aria-describedby="nimHelp"
         />
         <datalist id="nimList">
-          <!-- Options will be populated by app.js from tab "Nama" -->
+          <!-- Options will be populated by app.js from database peserta -->
         </datalist>
         <small id="nimHelp" class="form-hint hidden"></small>
       </div>
 
-      <!-- Nama — READ-ONLY, auto-filled from tab "Nama" lookup -->
+      <!-- Nama — READ-ONLY, auto-filled from NIM lookup -->
       <div class="form-group">
         <label class="form-label" for="inputNama">
           Nama Lengkap <span class="required" aria-label="wajib diisi">*</span>
